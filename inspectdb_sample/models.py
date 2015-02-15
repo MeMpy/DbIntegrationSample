@@ -10,6 +10,7 @@
 from __future__ import unicode_literals
 
 from django.db import models
+from django.db.models.query import RawQuerySet, QuerySet
 
 
 class CParameter(models.Model):
@@ -701,15 +702,7 @@ class UUser(models.Model):
         return self.userid
 
 
-class UUserArea(models.Model):
-    rowcount_id = models.IntegerField(primary_key=True) #UUserArea.objects.raw("select row_count() AS rowcount_id, userid, area_name from u_user_area")[0]
-    userid = models.ForeignKey(UUser, db_column='userid')
-    area_name = models.ForeignKey(UArea, db_column='area_name')
 
-    class Meta:
-        managed = False
-        db_table = 'u_user_area'
-        unique_together = ('userid', 'area_name')
 
 
 class UUserFunction(models.Model):
@@ -888,7 +881,7 @@ class WfTransitionLog(models.Model):
 # VIEWS #
 ####################
 
-class IDictionaryLanguage(models.Model):
+class IDictionaryLanguageView(models.Model):
     id = models.IntegerField(primary_key=True)  # AutoField?
     sic = models.CharField(max_length=60)
     message = models.CharField(max_length=400, blank=True)
@@ -910,4 +903,63 @@ class IDictionaryLanguage(models.Model):
 #   CUSTOM MANAGER
 #
 #####################
+
+#NB: It is better to create a CUSTOM RawQuerySet providing it with all necessary methods to access the data.
+# This is due to the fact that the manager simply proxy all the methods of the query set. So if you call objects.count()
+# you really call QuerySet.count() in this case RawQuerySet.count which doesn't work :)
+
+class IDictionaryLanguageRawManager(models.Manager):
+    def get_queryset(self):
+        return RawQuerySet("select `d`.`id` AS `id`,`d`.`sic` AS `sic`,`d`.`message` AS `message`,`d`.`domain` AS `domain`,`l`.`lang_id` AS `lang_id`,`l`.`lang_name` AS `lang_name` from (`i_dictionary` `d` join `i_language` `l`) where (`d`.`lang_id` = `l`.`lang_id`)",self.model)
+
+
+class IDictionaryLanguageRaw(models.Model):
+    id = models.IntegerField(primary_key=True)  # AutoField?
+    sic = models.CharField(max_length=60)
+    message = models.CharField(max_length=400, blank=True)
+    domain = models.CharField(max_length=20, blank=True)
+
+    lang_id = models.IntegerField()
+    lang_name = models.CharField(max_length=40, blank=True)
+
+    objects = IDictionaryLanguageRawManager()
+
+    def __unicode__(self):
+        return u"sic:{0}, mex:{1}, lang:{2}".format(self.sic, self.message, self.lang_name)
+
+    class Meta:
+        managed = False
+
+
+
+#######################
+#   SPECIAL CASE
+######################
+
+#
+class UUserAreaManager(models.Manager):
+
+    def get_queryset(self):
+        return RawQuerySet("select row_count() as rowcount_id, uua.userid, uua.area_name from u_user_area uua",self.model)
+
+    def get_uuserarea_of(self, user=None, area=None):
+        pass
+
+    def get_areas_of(self,user):
+        pass
+
+    def get_users_of(self, area):
+        pass
+
+
+class UUserArea(models.Model):
+    rowcount_id = models.IntegerField(primary_key=True) #UUserArea.objects.raw("select row_count() AS rowcount_id, userid, area_name from u_user_area")[0]
+    userid = models.ForeignKey(UUser, db_column='userid')
+    area_name = models.ForeignKey(UArea, db_column='area_name')
+
+    objects = UUserAreaManager()
+    class Meta:
+        managed = False
+        db_table = 'u_user_area'
+        unique_together = ('userid', 'area_name')
 
